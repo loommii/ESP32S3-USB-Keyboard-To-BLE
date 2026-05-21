@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Loommii USB-BLE Keyboard — 固件烧录</title>
+  <title>USB 键盘转 BLE 无线桥接器 — 固件烧录</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -16,7 +16,15 @@
     .card {
       background: #161b22; border: 1px solid #30363d; border-radius: 12px;
       padding: 2.5rem; max-width: 520px; width: 100%; text-align: center;
+      position: relative;
     }
+    .lang-toggle {
+      position: absolute; top: 1rem; right: 1rem;
+      background: #21262d; border: 1px solid #30363d; border-radius: 6px;
+      padding: 0.3rem 0.6rem; font-size: 0.8rem; cursor: pointer; color: #8b949e;
+      transition: background 0.15s;
+    }
+    .lang-toggle:hover { background: #30363d; color: #e6edf3; }
     h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
     .subtitle { color: #8b949e; font-size: 0.9rem; margin-bottom: 2rem; }
     ul { list-style: none; text-align: left; margin-bottom: 2rem; font-size: 0.9rem; }
@@ -33,23 +41,26 @@
     .footnote { margin-top: 1.5rem; font-size: 0.8rem; color: #484f58; }
     .footnote a { color: #58a6ff; text-decoration: none; }
     .footnote a:hover { text-decoration: underline; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>Loommii USB-BLE 键盘</h1>
-    <p class="subtitle">ESP32-S3 固件烧录工具</p>
+    <button class="lang-toggle" id="langToggle" onclick="toggleLang()">EN</button>
+
+    <h1 id="i18n-title">USB 键盘转 BLE 无线桥接器</h1>
+    <p class="subtitle" id="i18n-subtitle">ESP32-S3 固件烧录工具 · by Loommii</p>
 
     <ul>
-      <li>USB 键盘 → BLE 蓝牙桥接</li>
-      <li>三设备切换 (ScrLk + 1/2/3)</li>
-      <li>CapsLock 同步</li>
+      <li id="i18n-f1">USB 键盘 → BLE 蓝牙桥接</li>
+      <li id="i18n-f2">三设备切换 (ScrLk + 1/2/3)</li>
+      <li id="i18n-f3">解绑配对 (ScrLk + Esc)</li>
     </ul>
 
     <esp-web-install-button manifest="manifest.json">
-      <button class="btn" slot="activate">连接并烧录</button>
-      <span slot="unsupported">请使用 Chrome 或 Edge 浏览器</span>
-      <span slot="not-allowed">请通过 HTTPS 或 localhost 访问</span>
+      <button class="btn" slot="activate" id="i18n-btn">连接并烧录</button>
+      <span slot="unsupported" id="i18n-unsupported">请使用 Chrome 或 Edge 浏览器</span>
+      <span slot="not-allowed" id="i18n-notallowed">请通过 HTTPS 或 localhost 访问</span>
     </esp-web-install-button>
 
     <p class="footnote">
@@ -58,5 +69,60 @@
       <a href="https://espressif.github.io/esptool-js/">ESP Web Flasher</a>
     </p>
   </div>
+
+  <script>
+    const i18n = {
+      zh: {
+        title: "USB 键盘转 BLE 无线桥接器",
+        subtitle: "ESP32-S3 固件烧录工具 · by Loommii",
+        f1: "USB 键盘 → BLE 蓝牙桥接",
+        f2: "三设备切换 (ScrLk + 1/2/3)",
+        f3: "解绑配对 (ScrLk + Esc)",
+        btn: "连接并烧录",
+        unsupported: "请使用 Chrome 或 Edge 浏览器",
+        notallowed: "请通过 HTTPS 或 localhost 访问",
+        toggle: "EN"
+      },
+      en: {
+        title: "USB Keyboard to BLE Bridge",
+        subtitle: "ESP32-S3 Firmware Flasher · by Loommii",
+        f1: "USB Keyboard → BLE Bridge",
+        f2: "3-Device Switching (ScrLk + 1/2/3)",
+        f3: "Unpair Device (ScrLk + Esc)",
+        btn: "Connect & Flash",
+        unsupported: "Please use Chrome or Edge",
+        notallowed: "Access via HTTPS or localhost",
+        toggle: "中"
+      }
+    };
+
+    function applyLang(lang) {
+      const t = i18n[lang];
+      document.getElementById("i18n-title").textContent = t.title;
+      document.getElementById("i18n-subtitle").textContent = t.subtitle;
+      document.getElementById("i18n-f1").textContent = t.f1;
+      document.getElementById("i18n-f2").textContent = t.f2;
+      document.getElementById("i18n-f3").textContent = t.f3;
+      document.getElementById("i18n-btn").textContent = t.btn;
+      document.getElementById("i18n-unsupported").textContent = t.unsupported;
+      document.getElementById("i18n-notallowed").textContent = t.notallowed;
+      document.getElementById("langToggle").textContent = t.toggle;
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      localStorage.setItem("lang", lang);
+    }
+
+    function toggleLang() {
+      const current = localStorage.getItem("lang") || "zh";
+      const next = current === "zh" ? "en" : "zh";
+      applyLang(next);
+    }
+
+    (function initLang() {
+      const saved = localStorage.getItem("lang");
+      if (saved) { applyLang(saved); return; }
+      const browser = navigator.language || navigator.userLanguage || "";
+      applyLang(browser.startsWith("zh") ? "zh" : "en");
+    })();
+  </script>
 </body>
 </html>
