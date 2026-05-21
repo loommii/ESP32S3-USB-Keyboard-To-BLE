@@ -268,7 +268,7 @@ typedef enum {
     HID_KEYBOARD_KEY_NUMBER5,
     HID_KEYBOARD_KEY_MAX,
 } hid_keyboard_key_number_t;
-const uint8_t keycode2ascii [57][2] = {
+static const uint8_t keycode2ascii [57][2] = {
     {0, 0}, /* HID_KEY_NO_PRESS        */
     {0, 0}, /* HID_KEY_ROLLOVER        */
     {0, 0}, /* HID_KEY_POST_FAIL       */

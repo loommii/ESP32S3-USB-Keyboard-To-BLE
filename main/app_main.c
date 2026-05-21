@@ -47,9 +47,11 @@ static void hid_host_keyboard_report_callback(const uint8_t *const data, const i
     }
 
     ESP_LOGI(TAG, "KB Report: mod=0x%02x keys=[0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x]",
-        kb_report->modifier,
+        kb_report->modifier.val,
         kb_report->key[0], kb_report->key[1], kb_report->key[2],
         kb_report->key[3], kb_report->key[4], kb_report->key[5]);
+
+    bridge_handle_keyboard_report(data, length);
 }
 
 static void hid_host_interface_callback(hid_host_device_handle_t hid_device_handle,
@@ -151,6 +153,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(ble_hid_manager_init());
     ESP_ERROR_CHECK(ble_hid_report_init());
+    ESP_ERROR_CHECK(bridge_init());
 
     ESP_ERROR_CHECK(usb_host_manager_init());
 
