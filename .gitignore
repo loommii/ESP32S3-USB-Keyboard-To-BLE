@@ -1,0 +1,111 @@
+# ============================================
+# ESP-IDF Build Outputs
+# ============================================
+build/
+**/build/
+*.bin
+*.elf
+*.map
+flasher_args.json
+flash_project_args
+config/sdkconfig.cmake
+sdkconfig
+sdkconfig.old
+sdkconfig.defaults.*
+
+# ============================================
+# ESP-IDF Dependencies
+# ============================================
+managed_components/
+components/.idf/
+**/components/.idf/
+.espressif/
+
+# ============================================
+# CMake & Build System
+# ============================================
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+compile_commands.json
+
+# ============================================
+# IDE & Editor Files
+# ============================================
+# VSCode
+.vscode/
+*.code-workspace
+.devcontainer/
+
+# CLion / JetBrains
+.idea/
+*.iml
+
+# Eclipse
+.cproject
+.project
+.settings/
+
+# Language Servers
+.clangd/
+.ccls-cache/
+
+# Vim
+*~
+*.swp
+*.swo
+*\.bak
+
+# Emacs
+*~
+\#*\#
+
+# ============================================
+# OS Specific
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.lnk
+
+# Linux
+*~
+
+# ============================================
+# Python & Tools
+# ============================================
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+dist/
+venv/
+.venv/
+env/
+
+# ============================================
+# Logs & Temp Files
+# ============================================
+*.log
+*.tmp
+*.temp
+
+# ============================================
+# Git
+# ============================================
+.gitignore.bak
+
+# ============================================
+# Project Specific
+# ============================================
+tmp/
