@@ -42,7 +42,6 @@ static const char *hid_proto_name_str[] = {
 
 /* USB/BLE 连接状态标记，用于驱动 LED 状态指示 */
 static bool s_usb_connected = false;
-static bool s_ble_connected = false;
 
 /* 保存当前 USB 键盘 handle，供 bridge 层发送 LED Report 回传 */
 static hid_host_device_handle_t s_keyboard_handle = NULL;
@@ -63,7 +62,7 @@ void update_led_status(void)
 {
     if (!s_usb_connected) {
         led_status_set(LED_STATE_USB_DISCONNECTD);
-    } else if (s_usb_connected && !s_ble_connected) {
+    } else if (!ble_hid_is_connected()) {
         led_status_set(LED_STATE_USB_CONNECTED_BLE_DISCONNECTED);
     } else {
         led_status_set(LED_STATE_ALL_CONNECTED);

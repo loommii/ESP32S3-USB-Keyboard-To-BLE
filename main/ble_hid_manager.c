@@ -85,6 +85,18 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         }
         break;
 
+    /* 取消配对完成回调（由 bridge_request_unpair() 触发）
+     * 配对信息清除成功后，主动断开连接，断开后会自动重新广播
+     */
+    case ESP_GAP_BLE_REMOVE_BOND_DEV_COMPLETE_EVT:
+        if (param->remove_bond_dev_cmpl.status == ESP_BT_STATUS_SUCCESS) {
+            ESP_LOGI(TAG, "Bond removed, disconnecting device");
+            esp_ble_gap_disconnect(param->remove_bond_dev_cmpl.bd_addr);
+        } else {
+            ESP_LOGE(TAG, "Failed to remove bond: 0x%x", param->remove_bond_dev_cmpl.status);
+        }
+        break;
+
     default:
         break;
     }

@@ -1,4 +1,5 @@
 #include "led_status.h"
+#include "config.h"
 #include "led_strip.h"
 #include "esp_log.h"
 
@@ -29,19 +30,24 @@ esp_err_t led_status_set(led_state_t state)
 {
     switch (state) {
     case LED_STATE_USB_DISCONNECTD:
-        led_strip_set_pixel(s_strip, 0, 255, 0, 0);
+        /* 红色: USB未连接 */
+        led_strip_set_pixel(s_strip, 0, LED_BRIGHTNESS, 0, 0);
         break;
     case LED_STATE_USB_CONNECTED_BLE_DISCONNECTED:
-        led_strip_set_pixel(s_strip, 0, 255, 255, 0);
+        /* 紫色: USB已连接，BLE未连接 */
+        led_strip_set_pixel(s_strip, 0, LED_BRIGHTNESS, 0, LED_BRIGHTNESS);
         break;
     case LED_STATE_ALL_CONNECTED:
-        led_strip_set_pixel(s_strip, 0, 0, 255, 0);
+        /* 绿色: USB和BLE均已连接 */
+        led_strip_set_pixel(s_strip, 0, 0, LED_BRIGHTNESS, 0);
         break;
     case LED_STATE_SWITCHING:
-        led_strip_set_pixel(s_strip, 0, 0, 0, 255);
+        /* 橙色: 正在切换设备槽位 */
+        led_strip_set_pixel(s_strip, 0, LED_BRIGHTNESS, LED_BRIGHTNESS / 2, 0);
         break;
     case LED_STATE_ERROR:
-        led_strip_set_pixel(s_strip, 0, 255, 0, 0);
+        /* 红色: 错误状态 */
+        led_strip_set_pixel(s_strip, 0, LED_BRIGHTNESS, 0, 0);
         break;
     default:
         led_strip_clear(s_strip);

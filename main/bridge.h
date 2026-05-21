@@ -18,4 +18,10 @@ void bridge_on_ble_connected(void);
 
 void bridge_on_ble_disconnected(void);
 
+/**
+ * @brief 请求清除当前连接设备的配对信息
+ * 调用后触发 esp_ble_remove_bond_device()，断开和清除在 GAP 回调中完成
+ */
+void bridge_request_unpair(void);
+
 #endif

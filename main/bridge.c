@@ -36,6 +36,10 @@ static TaskHandle_t s_bridge_task_handle = NULL;
 static uint8_t s_current_slot = 0;
 static bool s_switch_combo_active = false;
 
+/* 取消配对状态 */
+static bool s_unpair_pending = false;
+static esp_bd_addr_t s_unpair_addr = {0};
+
 /**
  * @brief 切换设备槽位
  *
@@ -68,6 +72,50 @@ static void switch_device_slot(uint8_t new_slot)
     ESP_LOGI(TAG, "Rebooting to apply new slot...");
     vTaskDelay(pdMS_TO_TICKS(500));
     esp_restart();
+}
+
+/**
+ * @brief 请求清除当前连接设备的配对信息并断开连接
+ *
+ * 流程：调用 esp_ble_remove_bond_device() → 等待 GAP 回调
+ *       → 回调中调用 esp_ble_gap_disconnect() → 自动重新广播
+ *
+ * 符合官方最佳实践：等待 ESP_GAP_BLE_REMOVE_BOND_DEV_COMPLETE_EVT 后再断开连接
+ */
+void bridge_request_unpair(void)
+{
+    if (!ble_hid_is_connected()) {
+        ESP_LOGW(TAG, "No BLE connection, skip unpair");
+        return;
+    }
+
+    s_unpair_pending = true;
+    memcpy(s_unpair_addr, *ble_hid_get_remote_addr(), sizeof(esp_bd_addr_t));
+
+    ESP_LOGI(TAG, "Unpair requested for %02x:%02x:%02x:%02x:%02x:%02x",
+             s_unpair_addr[0], s_unpair_addr[1], s_unpair_addr[2],
+             s_unpair_addr[3], s_unpair_addr[4], s_unpair_addr[5]);
+
+    esp_ble_remove_bond_device(s_unpair_addr);
+}
+
+static void check_unpair_combo(const key_report_t *report)
+{
+    bool scroll_lock_pressed = false;
+    bool has_esc_key = false;
+
+    for (int i = 0; i < 6; i++) {
+        if (report->keys[i] == HID_KEY_SCROLL_LOCK) {
+            scroll_lock_pressed = true;
+        }
+        if (report->keys[i] == HID_KEY_ESC) {
+            has_esc_key = true;
+        }
+    }
+
+    if (scroll_lock_pressed && has_esc_key && !s_unpair_pending) {
+        bridge_request_unpair();
+    }
 }
 
 static void check_device_switch_combo(const key_report_t *report)
@@ -111,6 +159,7 @@ static void bridge_task(void *arg)
     while (1) {
         if (xQueueReceive(s_key_queue, &report, portMAX_DELAY)) {
             check_device_switch_combo(&report);
+            check_unpair_combo(&report);
 
             if (!ble_hid_is_connected()) {
                 continue;
