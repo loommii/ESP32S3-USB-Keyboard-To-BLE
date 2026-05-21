@@ -3,12 +3,12 @@
 
 #include "driver/gpio.h"
 
-#define DEVICE_NAME               "USB-BLE-TEST"
-#define DEVICE_NAME_1             "USB-BLE-KB-1"
-#define DEVICE_NAME_2             "USB-BLE-KB-2"
-#define DEVICE_NAME_3             "USB-BLE-KB-3"
+#define DEVICE_NAME               "Loommii-KB"
+#define DEVICE_NAME_1             "Loommii-KB-01"
+#define DEVICE_NAME_2             "Loommii-KB-02"
+#define DEVICE_NAME_3             "Loommii-KB-03"
 
-#define DEVICE_MANUFACTURER       "ESP32-S3"
+#define DEVICE_MANUFACTURER       "Loommii"
 
 #define BATTERY_LEVEL             100
 
