@@ -77,7 +77,7 @@ static void hid_host_keyboard_report_callback(const uint8_t *const data, const i
         return;
     }
 
-    ESP_LOGI(TAG, "KB Report: mod=0x%02x keys=[0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x]",
+    ESP_LOGD(TAG, "KB Report: mod=0x%02x keys=[0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x]",
         kb_report->modifier.val,
         kb_report->key[0], kb_report->key[1], kb_report->key[2],
         kb_report->key[3], kb_report->key[4], kb_report->key[5]);
@@ -118,7 +118,7 @@ static void hid_host_interface_callback(hid_host_device_handle_t hid_device_hand
         ESP_ERROR_CHECK(hid_host_device_close(hid_device_handle));
         break;
     case HID_HOST_INTERFACE_EVENT_TRANSFER_ERROR:
-        ESP_LOGI(TAG, "HID Device, protocol '%s' TRANSFER_ERROR",
+        ESP_LOGW(TAG, "HID Device, protocol '%s' TRANSFER_ERROR",
                  hid_proto_name_str[dev_params.proto]);
         break;
     default:

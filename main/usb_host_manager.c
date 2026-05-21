@@ -27,22 +27,22 @@ static void usb_lib_task(void *arg)
         uint32_t event_flags;
         ESP_ERROR_CHECK(usb_host_lib_handle_events(portMAX_DELAY, &event_flags));
         if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
-            ESP_LOGI(TAG, "No more clients");
+            ESP_LOGD(TAG, "No more clients");
             if (ESP_OK == usb_host_device_free_all()) {
-                ESP_LOGI(TAG, "All devices marked as free");
+                ESP_LOGD(TAG, "All devices marked as free");
                 has_clients = false;
             } else {
-                ESP_LOGI(TAG, "Wait for FLAGS_ALL_FREE");
+                ESP_LOGD(TAG, "Wait for FLAGS_ALL_FREE");
                 has_devices = true;
             }
         }
         if (has_devices && event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE) {
-            ESP_LOGI(TAG, "All devices free");
+            ESP_LOGD(TAG, "All devices free");
             has_clients = false;
         }
     }
 
-    ESP_LOGI(TAG, "Uninstalling USB Host Library");
+    ESP_LOGD(TAG, "Uninstalling USB Host Library");
     ESP_ERROR_CHECK(usb_host_uninstall());
     s_usb_lib_task_handle = NULL;
     vTaskDelete(NULL);
