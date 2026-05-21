@@ -3,8 +3,10 @@
 #include "ble_hid_report.h"
 #include "hid_types.h"
 #include "hid_usage_keyboard.h"
+#include "hid_host_driver.h"
 #include "nvs_storage.h"
 #include "led_status.h"
+#include "app_main.h"
 #include "esp_log.h"
 #include "esp_bt.h"
 #include "esp_bt_defs.h"
@@ -179,9 +181,38 @@ void bridge_handle_keyboard_report(const uint8_t *data, size_t length)
     }
 }
 
+/**
+ * @brief 处理 BLE 主机发来的 LED Report（CapsLock/NumLock/ScrollLock 状态）
+ *
+ * 数据流：PC 按 CapsLock → BLE GATT Write → ESP_HIDD_EVENT_BLE_LED_REPORT_WRITE_EVT
+ *        → 此函数 → hid_class_request_set_report → USB 键盘 LED 亮灭
+ *
+ * LED Report 字节定义（bit 位掩码）：
+ *   bit 0 = Num Lock
+ *   bit 1 = Caps Lock
+ *   bit 2 = Scroll Lock
+ *
+ * @param led_bitmap  LED 状态字节，来自 BLE 主机的 Output Report
+ */
 void bridge_handle_led_report(uint8_t led_bitmap)
 {
-    ESP_LOGI(TAG, "LED report from host: 0x%02x", led_bitmap);
+    hid_host_device_handle_t kb_handle = app_get_keyboard_handle();
+    if (kb_handle == NULL) {
+        ESP_LOGW(TAG, "No keyboard connected, skip LED report");
+        return;
+    }
+
+    /* 通过 USB HID SET_REPORT 将 LED 状态发送给 USB 键盘
+     * report_type = 0x02 (Output Report)
+     * report_id   = 0    (Boot Protocol 无 Report ID)
+     */
+    uint8_t data = led_bitmap;
+    esp_err_t ret = hid_class_request_set_report(kb_handle, 0x02, 0, &data, 1);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to send LED report to USB keyboard: 0x%x", ret);
+    } else {
+        ESP_LOGD(TAG, "LED report sent: 0x%02x", led_bitmap);
+    }
 }
 
 uint8_t bridge_get_current_slot(void)

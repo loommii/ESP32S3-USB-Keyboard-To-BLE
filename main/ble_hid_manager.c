@@ -126,9 +126,15 @@ static void hidd_event_callback(esp_hidd_cb_event_t event, esp_hidd_cb_param_t *
         ESP_LOG_BUFFER_HEX(TAG, param->vendor_write.data, param->vendor_write.length);
         break;
 
+    /* BLE 主机写入 LED Report（CapsLock/NumLock/ScrollLock 状态）
+     * 转发到 USB 键盘，实现主机端 LED 状态同步
+     */
     case ESP_HIDD_EVENT_BLE_LED_REPORT_WRITE_EVT:
         ESP_LOGI(TAG, "ESP_HIDD_EVENT_BLE_LED_REPORT_WRITE_EVT");
         ESP_LOG_BUFFER_HEX(TAG, param->led_write.data, param->led_write.length);
+        if (param->led_write.length >= 1) {
+            bridge_handle_led_report(param->led_write.data[0]);
+        }
         break;
 
     default:

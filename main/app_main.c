@@ -14,6 +14,7 @@
 #include "bridge.h"
 #include "led_status.h"
 #include "nvs_storage.h"
+#include "app_main.h"
 
 static const char *TAG = "USB-BLE-KB";
 
@@ -38,8 +39,24 @@ static const char *hid_proto_name_str[] = {
     "MOUSE"
 };
 
+/* USB/BLE 连接状态标记，用于驱动 LED 状态指示 */
 static bool s_usb_connected = false;
 static bool s_ble_connected = false;
+
+/* 保存当前 USB 键盘 handle，供 bridge 层发送 LED Report 回传 */
+static hid_host_device_handle_t s_keyboard_handle = NULL;
+
+/**
+ * @brief 获取当前 USB 键盘 handle
+ *
+ * bridge_handle_led_report() 通过此接口获取键盘 handle，
+ * 调用 hid_class_request_set_report() 将 BLE 端的 LED 状态
+ * （CapsLock/NumLock/ScrollLock）转发到 USB 键盘
+ */
+hid_host_device_handle_t app_get_keyboard_handle(void)
+{
+    return s_keyboard_handle;
+}
 
 void update_led_status(void)
 {
@@ -95,6 +112,7 @@ static void hid_host_interface_callback(hid_host_device_handle_t hid_device_hand
                  hid_proto_name_str[dev_params.proto]);
         if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
             s_usb_connected = false;
+            s_keyboard_handle = NULL;  /* 键盘断开，清空 handle */
             update_led_status();
         }
         ESP_ERROR_CHECK(hid_host_device_close(hid_device_handle));
@@ -121,6 +139,7 @@ static void hid_host_device_event(hid_host_device_handle_t hid_device_handle,
 
         if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
             s_usb_connected = true;
+            s_keyboard_handle = hid_device_handle;  /* 保存键盘 handle 供 LED 回传使用 */
             update_led_status();
         }
 
