@@ -36,6 +36,16 @@ static TaskHandle_t s_bridge_task_handle = NULL;
 static uint8_t s_current_slot = 0;
 static bool s_switch_combo_active = false;
 
+/**
+ * @brief 切换设备槽位
+ *
+ * 流程：保存槽位到 NVS → 断开 BLE 连接 → 重启
+ * 重启后 app_main() 根据新槽位设置 MAC 地址和设备名
+ * 每个槽位使用不同 MAC 后缀，主机识别为不同设备
+ * 注意：首次切换到新槽位需重新配对，切回已配对槽位时主机可能自动重连
+ *
+ * @param new_slot  目标槽位 (0-2)
+ */
 static void switch_device_slot(uint8_t new_slot)
 {
     if (new_slot >= MAX_DEVICE_SLOTS) {

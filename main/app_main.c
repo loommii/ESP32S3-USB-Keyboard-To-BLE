@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -191,9 +192,37 @@ void app_main(void)
 
     ESP_ERROR_CHECK(nvs_storage_init());
 
+    /* 根据 NVS 中的槽位索引设置 MAC 地址和设备名
+     * 每个槽位使用不同的 MAC 后缀，使主机识别为不同设备
+     * 槽位 0 → MAC 后缀 0 → "USB-BLE-KB-1"
+     * 槽位 1 → MAC 后缀 1 → "USB-BLE-KB-2"
+     * 槽位 2 → MAC 后缀 2 → "USB-BLE-KB-3"
+     * 注意：切换槽位后需重新配对，切回已配对槽位时主机可能自动重连
+     */
+    uint8_t slot = 0;
+    nvs_storage_get_slot(&slot);
+    if (slot >= MAX_DEVICE_SLOTS) {
+        slot = 0;
+    }
+
+    /* 修改 MAC 地址最后一字节（必须在 BLE 初始化之前调用）*/
+    esp_bd_addr_t base_mac;
+    esp_base_mac_addr_get(base_mac);
+    base_mac[5] = (base_mac[5] & 0xF0) | (slot & 0x0F);
+    esp_base_mac_addr_set(base_mac);
+    ESP_LOGI(TAG, "MAC address: %02x:%02x:%02x:%02x:%02x:%02x",
+             base_mac[0], base_mac[1], base_mac[2],
+             base_mac[3], base_mac[4], base_mac[5]);
+
+    /* 设置设备名 */
+    const char *slot_names[] = {DEVICE_NAME_1, DEVICE_NAME_2, DEVICE_NAME_3};
+    ble_hid_set_device_name(slot_names[slot]);
+    ESP_LOGI(TAG, "Device slot: %d, name: %s", slot, slot_names[slot]);
+
     ESP_ERROR_CHECK(led_status_init());
 
     ESP_ERROR_CHECK(ble_hid_manager_init());
+
     ESP_ERROR_CHECK(ble_hid_report_init());
     ESP_ERROR_CHECK(bridge_init());
 
