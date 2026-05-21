@@ -6,7 +6,7 @@
 
 **Version: V1.0.0**
 
-<p align="center"><img src="logo.png" width="80%" alt="logo" style="max-width: 278px;"></p>
+<p align="center"><img src="logo.png" width="260" alt="logo"></p>
 
 Convert a wired USB keyboard to a wireless BLE keyboard via ESP32-S3. Supports multi-device switching.
 

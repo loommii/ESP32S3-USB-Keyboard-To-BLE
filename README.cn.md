@@ -6,7 +6,7 @@
 
 **版本: V1.0.0**
 
-<p align="center"><img src="logo.png" width="80%" alt="logo" style="max-width: 278px;"></p>
+<p align="center"><img src="logo.png" width="260" alt="logo"></p>
 
 将 USB 有线键盘通过 ESP32-S3 转换为蓝牙（BLE）无线键盘，支持多设备切换
 
