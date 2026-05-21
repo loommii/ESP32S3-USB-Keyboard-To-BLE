@@ -1,0 +1,15 @@
+{
+  "name": "Loommii USB-BLE Keyboard",
+  "version": "1.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "bootloader.bin", "offset": 0 },
+        { "path": "partition-table.bin", "offset": 32768 },
+        { "path": "ESP32S3-USB-Keyboard-To-BLE.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}
