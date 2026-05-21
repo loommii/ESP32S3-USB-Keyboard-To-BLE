@@ -1,5 +1,6 @@
 #include "ble_hid_manager.h"
 #include "ble_hid_report.h"
+#include "bridge.h"
 #include "esp_log.h"
 #include "esp_bt.h"
 #include "esp_bt_main.h"
@@ -10,13 +11,16 @@
 #include "esp_gatt_defs.h"
 #include "nvs_flash.h"
 #include "config.h"
+#include "string.h"
 
 static const char *TAG = "BLE_HID";
 
 static uint16_t s_hid_conn_id = 0;
 static bool s_sec_conn = false;
+static esp_bd_addr_t s_remote_bda = {0};
 
 static const char *s_device_name = DEVICE_NAME;
+static char s_device_name_buf[32] = DEVICE_NAME;
 
 static uint8_t hidd_service_uuid128[] = {
     0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80,
@@ -68,6 +72,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
         s_sec_conn = true;
+        memcpy(s_remote_bda, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
         esp_bd_addr_t bd_addr;
         memcpy(bd_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
         ESP_LOGI(TAG, "remote BD_ADDR: %08x%04x",
@@ -104,11 +109,15 @@ static void hidd_event_callback(esp_hidd_cb_event_t event, esp_hidd_cb_param_t *
     case ESP_HIDD_EVENT_BLE_CONNECT:
         ESP_LOGI(TAG, "ESP_HIDD_EVENT_BLE_CONNECT");
         s_hid_conn_id = param->connect.conn_id;
+        s_sec_conn = true;
+        bridge_on_ble_connected();
         break;
 
     case ESP_HIDD_EVENT_BLE_DISCONNECT:
         s_sec_conn = false;
+        memset(s_remote_bda, 0, sizeof(esp_bd_addr_t));
         ESP_LOGI(TAG, "ESP_HIDD_EVENT_BLE_DISCONNECT");
+        bridge_on_ble_disconnected();
         esp_ble_gap_start_advertising(&hidd_adv_params);
         break;
 
@@ -204,4 +213,16 @@ bool ble_hid_is_connected(void)
 uint16_t ble_hid_get_conn_id(void)
 {
     return s_hid_conn_id;
+}
+
+const esp_bd_addr_t *ble_hid_get_remote_addr(void)
+{
+    return &s_remote_bda;
+}
+
+void ble_hid_set_device_name(const char *name)
+{
+    snprintf(s_device_name_buf, sizeof(s_device_name_buf), "%s", name);
+    s_device_name = s_device_name_buf;
+    esp_ble_gap_set_device_name(s_device_name);
 }

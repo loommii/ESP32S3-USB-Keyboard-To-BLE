@@ -16,4 +16,5 @@ idf_component_register(
         esp_driver_gpio
         nvs_flash
         bt
+        led_strip
 )

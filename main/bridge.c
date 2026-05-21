@@ -2,10 +2,19 @@
 #include "ble_hid_manager.h"
 #include "ble_hid_report.h"
 #include "hid_types.h"
+#include "hid_usage_keyboard.h"
+#include "nvs_storage.h"
+#include "led_status.h"
 #include "esp_log.h"
+#include "esp_bt.h"
+#include "esp_bt_defs.h"
+#include "esp_bt_main.h"
+#include "esp_gap_ble_api.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+
+void update_led_status(void);
 
 static const char *TAG = "BRIDGE";
 
@@ -22,6 +31,66 @@ typedef struct {
 
 static QueueHandle_t s_key_queue = NULL;
 static TaskHandle_t s_bridge_task_handle = NULL;
+static uint8_t s_current_slot = 0;
+static bool s_switch_combo_active = false;
+
+static void switch_device_slot(uint8_t new_slot)
+{
+    if (new_slot >= MAX_DEVICE_SLOTS) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "Switching device slot from %d to %d", s_current_slot, new_slot);
+
+    led_status_set(LED_STATE_SWITCHING);
+
+    nvs_storage_set_slot(new_slot);
+
+    if (ble_hid_is_connected()) {
+        esp_bd_addr_t remote_addr;
+        memcpy(remote_addr, *ble_hid_get_remote_addr(), sizeof(esp_bd_addr_t));
+        esp_ble_gap_disconnect(remote_addr);
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    ESP_LOGI(TAG, "Rebooting to apply new slot...");
+    vTaskDelay(pdMS_TO_TICKS(500));
+    esp_restart();
+}
+
+static void check_device_switch_combo(const key_report_t *report)
+{
+    bool scroll_lock_pressed = false;
+    uint8_t target_slot = 0;
+    bool has_number_key = false;
+
+    for (int i = 0; i < 6; i++) {
+        if (report->keys[i] == HID_KEY_SCROLL_LOCK) {
+            scroll_lock_pressed = true;
+        }
+        if (report->keys[i] == HID_KEY_1) {
+            target_slot = 0;
+            has_number_key = true;
+        } else if (report->keys[i] == HID_KEY_2) {
+            target_slot = 1;
+            has_number_key = true;
+        } else if (report->keys[i] == HID_KEY_3) {
+            target_slot = 2;
+            has_number_key = true;
+        }
+    }
+
+    if (scroll_lock_pressed && has_number_key && !s_switch_combo_active) {
+        if (target_slot != s_current_slot) {
+            s_switch_combo_active = true;
+            switch_device_slot(target_slot);
+        }
+    }
+
+    if (!scroll_lock_pressed) {
+        s_switch_combo_active = false;
+    }
+}
 
 static void bridge_task(void *arg)
 {
@@ -29,6 +98,8 @@ static void bridge_task(void *arg)
 
     while (1) {
         if (xQueueReceive(s_key_queue, &report, portMAX_DELAY)) {
+            check_device_switch_combo(&report);
+
             if (!ble_hid_is_connected()) {
                 continue;
             }
@@ -59,6 +130,9 @@ static void bridge_task(void *arg)
 
 esp_err_t bridge_init(void)
 {
+    nvs_storage_get_slot(&s_current_slot);
+    ESP_LOGI(TAG, "Current device slot: %d", s_current_slot);
+
     s_key_queue = xQueueCreate(BRIDGE_QUEUE_LENGTH, sizeof(key_report_t));
     if (s_key_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create key queue");
@@ -103,4 +177,24 @@ void bridge_handle_keyboard_report(const uint8_t *data, size_t length)
     if (ret != pdPASS) {
         ESP_LOGW(TAG, "Key queue full, dropping report");
     }
+}
+
+void bridge_handle_led_report(uint8_t led_bitmap)
+{
+    ESP_LOGI(TAG, "LED report from host: 0x%02x", led_bitmap);
+}
+
+uint8_t bridge_get_current_slot(void)
+{
+    return s_current_slot;
+}
+
+void bridge_on_ble_connected(void)
+{
+    update_led_status();
+}
+
+void bridge_on_ble_disconnected(void)
+{
+    update_led_status();
 }

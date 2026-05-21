@@ -38,6 +38,20 @@ static const char *hid_proto_name_str[] = {
     "MOUSE"
 };
 
+static bool s_usb_connected = false;
+static bool s_ble_connected = false;
+
+void update_led_status(void)
+{
+    if (!s_usb_connected) {
+        led_status_set(LED_STATE_USB_DISCONNECTD);
+    } else if (s_usb_connected && !s_ble_connected) {
+        led_status_set(LED_STATE_USB_CONNECTED_BLE_DISCONNECTED);
+    } else {
+        led_status_set(LED_STATE_ALL_CONNECTED);
+    }
+}
+
 static void hid_host_keyboard_report_callback(const uint8_t *const data, const int length)
 {
     hid_keyboard_input_report_boot_t *kb_report = (hid_keyboard_input_report_boot_t *)data;
@@ -79,6 +93,10 @@ static void hid_host_interface_callback(hid_host_device_handle_t hid_device_hand
     case HID_HOST_INTERFACE_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "HID Device, protocol '%s' DISCONNECTED",
                  hid_proto_name_str[dev_params.proto]);
+        if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
+            s_usb_connected = false;
+            update_led_status();
+        }
         ESP_ERROR_CHECK(hid_host_device_close(hid_device_handle));
         break;
     case HID_HOST_INTERFACE_EVENT_TRANSFER_ERROR:
@@ -100,6 +118,11 @@ static void hid_host_device_event(hid_host_device_handle_t hid_device_handle,
     switch (event) {
     case HID_HOST_DRIVER_EVENT_CONNECTED:
         ESP_LOGI(TAG, "HID Device, protocol '%s' CONNECTED", hid_proto_name_str[dev_params.proto]);
+
+        if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
+            s_usb_connected = true;
+            update_led_status();
+        }
 
         const hid_host_device_config_t dev_config = {
             .callback = hid_host_interface_callback,
