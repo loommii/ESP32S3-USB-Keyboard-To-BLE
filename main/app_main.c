@@ -240,6 +240,8 @@ void app_main(void)
 
     s_app_event_queue = xQueueCreate(10, sizeof(app_event_queue_t));
 
+    update_led_status();  // 初始化完成后刷新 LED 状态（无 USB 无 BLE 连接时亮红灯）
+
     ESP_LOGI(TAG, "Waiting for HID Device to be connected");
 
     app_event_queue_t evt_queue;
