@@ -49,7 +49,7 @@
     <button class="lang-toggle" id="langToggle" onclick="toggleLang()">EN</button>
 
     <h1 id="i18n-title">USB 键盘转 BLE 无线桥接器</h1>
-    <p class="subtitle" id="i18n-subtitle">ESP32-S3 固件烧录工具 · by Loommii</p>
+    <p class="subtitle" id="i18n-subtitle"></p>
 
     <ul>
       <li id="i18n-f1">USB 键盘 → BLE 蓝牙桥接</li>
@@ -71,10 +71,12 @@
   </div>
 
   <script>
+    const VERSION = "V1.0.1";
+
     const i18n = {
       zh: {
         title: "USB 键盘转 BLE 无线桥接器",
-        subtitle: "ESP32-S3 固件烧录工具 · by Loommii",
+        subtitle: "ESP32-S3 固件烧录工具 · by Loommii · " + VERSION,
         f1: "USB 键盘 → BLE 蓝牙桥接",
         f2: "三设备切换 (ScrLk + 1/2/3)",
         f3: "解绑配对 (ScrLk + Esc)",
@@ -85,7 +87,7 @@
       },
       en: {
         title: "USB Keyboard to BLE Bridge",
-        subtitle: "ESP32-S3 Firmware Flasher · by Loommii",
+        subtitle: "ESP32-S3 Firmware Flasher · by Loommii · " + VERSION,
         f1: "USB Keyboard → BLE Bridge",
         f2: "3-Device Switching (ScrLk + 1/2/3)",
         f3: "Unpair Device (ScrLk + Esc)",
