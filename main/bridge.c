@@ -165,12 +165,11 @@ static void bridge_task(void *arg)
                 continue;
             }
 
-            uint16_t conn_id = ble_hid_get_conn_id();
             bool send_ok = false;
 
             for (int retry = 0; retry < BRIDGE_SEND_RETRY_COUNT; retry++) {
                 esp_err_t ret = ble_hid_send_keyboard_value(
-                    conn_id, report.modifier, report.keys, 6);
+                    report.modifier, report.keys, 6);
 
                 if (ret == ESP_OK) {
                     send_ok = true;
@@ -281,6 +280,8 @@ uint8_t bridge_get_current_slot(void)
 
 void bridge_on_ble_connected(void)
 {
+    /* 重连后重置解绑标志，允许再次使用 ScrollLock+Esc 组合键 */
+    s_unpair_pending = false;
     update_led_status();
 }
 

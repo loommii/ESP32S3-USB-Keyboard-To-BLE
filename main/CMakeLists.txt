@@ -7,9 +7,6 @@ idf_component_register(
         "bridge.c"
         "led_status.c"
         "nvs_storage.c"
-        "esp_hidd_prf_api.c"
-        "hid_dev.c"
-        "hid_device_le_prf.c"
     INCLUDE_DIRS "."
     REQUIRES
         esp_driver_gpio
@@ -17,4 +14,5 @@ idf_component_register(
         bt
         led_strip
         usb_host_hid
+        esp_hid
 )

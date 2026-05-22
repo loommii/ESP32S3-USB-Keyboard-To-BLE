@@ -6,11 +6,19 @@
 /* 设备名称配置 */
 #define DEVICE_NAME               "Loommii-KB"
 #define DEVICE_NAME_1             "Loommii-KB-01"
-#define DEVICE_NAME_2             "Loommii-KB-02"
+#define DEVICE_NAME_2             "Loommii-KB-02"   
 #define DEVICE_NAME_3             "Loommii-KB-03"
 
 /* 设备制造商 */
 #define DEVICE_MANUFACTURER       "Loommii"
+
+/* BLE 设备信息服务：VID/PID/版本 */
+#define BLE_VENDOR_ID             0x16C0
+#define BLE_PRODUCT_ID            0x05DF
+#define BLE_VERSION               0x0100
+
+/* 设备序列号 */
+#define DEVICE_SERIAL_NUMBER      "1234567890"
 
 /* 电池电量百分比 */
 #define BATTERY_LEVEL             100
