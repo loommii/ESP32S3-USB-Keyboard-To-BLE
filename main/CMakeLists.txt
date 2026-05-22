@@ -2,7 +2,6 @@ idf_component_register(
     SRCS
         "app_main.c"
         "usb_host_manager.c"
-        "hid_host_driver.c"
         "ble_hid_manager.c"
         "ble_hid_report.c"
         "bridge.c"
@@ -17,4 +16,5 @@ idf_component_register(
         nvs_flash
         bt
         led_strip
+        usb_host_hid
 )

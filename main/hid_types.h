@@ -2,8 +2,8 @@
 #define HID_TYPES_H
 
 #include <stdint.h>
-#include "hid.h"
-#include "hid_usage_keyboard.h"
+#include "usb/hid.h"
+#include "usb/hid_usage_keyboard.h"
 
 typedef struct {
     uint8_t modifier;

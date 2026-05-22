@@ -16,3 +16,4 @@ dependencies:
   #   public: true
   espressif/usb: '*'
   espressif/led_strip: ^3.0.3
+  espressif/usb_host_hid: ^1.2.0

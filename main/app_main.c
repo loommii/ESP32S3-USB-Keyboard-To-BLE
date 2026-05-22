@@ -8,8 +8,8 @@
 
 #include "config.h"
 #include "usb_host_manager.h"
-#include "hid_host_driver.h"
-#include "hid_usage_keyboard.h"
+#include "usb/hid_host.h"
+#include "usb/hid_usage_keyboard.h"
 #include "ble_hid_manager.h"
 #include "ble_hid_report.h"
 #include "bridge.h"

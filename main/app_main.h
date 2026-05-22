@@ -1,7 +1,7 @@
 #ifndef APP_MAIN_H
 #define APP_MAIN_H
 
-#include "hid_host_driver.h"
+#include "usb/hid_host.h"
 
 /**
  * @brief 获取当前 USB 键盘设备 handle
