@@ -58,12 +58,16 @@ hid_host_device_handle_t app_get_keyboard_handle(void)
     return s_keyboard_handle;
 }
 
+/* 根据 USB/BLE/配对状态刷新 LED */
 void update_led_status(void)
 {
     if (!s_usb_connected) {
         led_status_set(LED_STATE_USB_DISCONNECTD);
     } else if (!ble_hid_is_connected()) {
         led_status_set(LED_STATE_USB_CONNECTED_BLE_DISCONNECTED);
+    } else if (ble_hid_is_pairing()) {
+        /* 已连接但正在配对中，显示紫色常亮 */
+        led_status_set(LED_STATE_PAIRING);
     } else {
         led_status_set(LED_STATE_ALL_CONNECTED);
     }
@@ -205,7 +209,7 @@ void app_main(void)
     }
 
     /* 修改 MAC 地址最后一字节（必须在 BLE 初始化之前调用）*/
-    esp_bd_addr_t base_mac;
+    uint8_t base_mac[6];
     esp_base_mac_addr_get(base_mac);
     base_mac[5] = (base_mac[5] & 0xF0) | (slot & 0x0F);
     esp_base_mac_addr_set(base_mac);

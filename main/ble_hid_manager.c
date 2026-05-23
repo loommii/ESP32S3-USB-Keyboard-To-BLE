@@ -1,58 +1,39 @@
-#include "ble_hid_manager.h"
-#include "ble_hid_report.h"
-#include "bridge.h"
+#include <string.h>
 #include "esp_log.h"
-#include "esp_bt.h"
-#include "esp_bt_main.h"
-#include "esp_bt_device.h"
-#include "esp_gap_ble_api.h"
-#include "esp_gatts_api.h"
-#include "esp_gatt_defs.h"
 #include "esp_hidd.h"
-#include "esp_hidd_gatts.h"
-#include "esp_hid_common.h"
-#include "nvs_flash.h"
+#include "host/ble_hs.h"
+#include "host/ble_gap.h"
+#include "host/ble_store.h"
+#include "host/ble_sm.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
+#include "services/gap/ble_svc_gap.h"
+#include "ble_hid_manager.h"
+#include "bridge.h"
+#include "led_status.h"
+#include "app_main.h"
 #include "config.h"
-#include "string.h"
 
 static const char *TAG = "BLE_HID";
 
-static bool s_sec_conn = false;
-static esp_bd_addr_t s_remote_bda = {0};
-static esp_hidd_dev_t *s_hid_dev = NULL;  /* esp_hid 组件设备句柄，用于发送输入报告和查询连接状态 */
+/*--------------------------------------------------------------------*/
+/*  STATIC VARIABLES                                                  */
+/*--------------------------------------------------------------------*/
 
-static const char *s_device_name = DEVICE_NAME;
-static char s_device_name_buf[32] = DEVICE_NAME;
+/* BLE 连接状态 */
+static bool s_sec_conn = false;             /* 是否已建立 BLE 连接 */
+static uint8_t s_remote_bda[6] = {0};       /* 对端设备蓝牙地址 */
+static uint8_t s_peer_addr_type = 0;        /* 对端地址类型（公共/随机） */
+static uint16_t s_conn_handle = 0;          /* 当前连接句柄 */
+static esp_hidd_dev_t *s_hid_dev = NULL;    /* esp_hid 组件设备句柄 */
+static char s_device_name_buf[32] = DEVICE_NAME_1;  /* 当前广播设备名 */
+static uint8_t s_own_addr_type = 0;         /* 本地地址类型 */
+/* 配对状态：true = 正在等待用户通过键盘输入配对码 */
+static bool s_pairing_active = false;
 
-static uint8_t hidd_service_uuid128[] = {
-    0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80,
-    0x00, 0x10, 0x00, 0x00, 0x12, 0x18, 0x00, 0x00,
-};
-
-static esp_ble_adv_data_t hidd_adv_data = {
-    .set_scan_rsp = false,
-    .include_name = true,
-    .include_txpower = true,
-    .min_interval = 0x0006,
-    .max_interval = 0x0010,
-    .appearance = 0x03C1,
-    .manufacturer_len = 0,
-    .p_manufacturer_data = NULL,
-    .service_data_len = 0,
-    .p_service_data = NULL,
-    .service_uuid_len = sizeof(hidd_service_uuid128),
-    .p_service_uuid = hidd_service_uuid128,
-    .flag = 0x6,
-};
-
-static esp_ble_adv_params_t hidd_adv_params = {
-    .adv_int_min = 0x20,
-    .adv_int_max = 0x30,
-    .adv_type = ADV_TYPE_IND,
-    .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
-    .channel_map = ADV_CHNL_ALL,
-    .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
-};
+/*--------------------------------------------------------------------*/
+/*  REPORT MAP                                                        */
+/*--------------------------------------------------------------------*/
 
 static const uint8_t hid_report_map[] = {
     0x05, 0x01,  // Usage Page (Generic Desktop)
@@ -190,67 +171,157 @@ static esp_hid_raw_report_map_t ble_report_maps[] = {
     },
 };
 
-/* BLE HID 设备配置：VID/PID/版本/设备名/制造商/序列号/报告映射表 */
+/* BLE HID 设备配置：VID / PID / 版本 / report map */
 static esp_hid_device_config_t ble_hid_config = {
-    .vendor_id          = BLE_VENDOR_ID,
-    .product_id         = BLE_PRODUCT_ID,
-    .version            = BLE_VERSION,
-    .device_name        = DEVICE_NAME,
-    .manufacturer_name  = DEVICE_MANUFACTURER,
-    .serial_number      = DEVICE_SERIAL_NUMBER,
-    .report_maps        = ble_report_maps,
-    .report_maps_len    = 1,
+    .vendor_id         = BLE_VENDOR_ID,
+    .product_id        = BLE_PRODUCT_ID,
+    .version           = BLE_VERSION,
+    .device_name       = DEVICE_NAME_1,
+    .manufacturer_name = DEVICE_MANUFACTURER,
+    .serial_number     = DEVICE_SERIAL_NUMBER,
+    .report_maps       = ble_report_maps,
+    .report_maps_len   = 1,
 };
 
-static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
+/*--------------------------------------------------------------------*/
+/*  前向声明                                                            */
+/*--------------------------------------------------------------------*/
+
+static int nimble_gap_event(struct ble_gap_event *event, void *arg);
+static void start_advertising(void);
+
+/*--------------------------------------------------------------------*/
+/*  广播                                                                  */
+/*--------------------------------------------------------------------*/
+
+/* 启动 BLE 广播，连接回调注册在 ble_gap_adv_start 中 */
+static void start_advertising(void)
 {
-    switch (event) {
-    case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
-        esp_ble_gap_start_advertising(&hidd_adv_params);
-        break;
+    struct ble_gap_adv_params adv_params;
+    memset(&adv_params, 0, sizeof(adv_params));
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
-    case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
-        ESP_LOGI(TAG, "Advertising started");
-        break;
+    struct ble_hs_adv_fields fields;
+    memset(&fields, 0, sizeof(fields));
 
-    case ESP_GAP_BLE_SEC_REQ_EVT:
-        for (int i = 0; i < ESP_BD_ADDR_LEN; i++) {
-            ESP_LOGD(TAG, "%x:", param->ble_security.ble_req.bd_addr[i]);
-        }
-        esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
-        break;
+    fields.name = (uint8_t *)s_device_name_buf;
+    fields.name_len = strlen(s_device_name_buf);
+    fields.name_is_complete = 1;
+    fields.tx_pwr_lvl_is_present = 1;
+    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+    fields.appearance = 0x03C1;
+    fields.appearance_is_present = 1;
+    fields.flags = BLE_HS_ADV_F_DISC_GEN;
 
-    case ESP_GAP_BLE_AUTH_CMPL_EVT:
-        s_sec_conn = true;
-        memcpy(s_remote_bda, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
-        esp_bd_addr_t bd_addr;
-        memcpy(bd_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
-        ESP_LOGI(TAG, "remote BD_ADDR: %08x%04x",
-                 (bd_addr[0] << 24) + (bd_addr[1] << 16) + (bd_addr[2] << 8) + bd_addr[3],
-                 (bd_addr[4] << 8) + bd_addr[5]);
-        ESP_LOGI(TAG, "address type = %d", param->ble_security.auth_cmpl.addr_type);
-        ESP_LOGI(TAG, "pair status = %s", param->ble_security.auth_cmpl.success ? "success" : "fail");
-        if (!param->ble_security.auth_cmpl.success) {
-            ESP_LOGE(TAG, "fail reason = 0x%x", param->ble_security.auth_cmpl.fail_reason);
-        }
-        break;
+    int rc = ble_gap_adv_set_fields(&fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "adv set fields failed: %d", rc);
+        return;
+    }
 
-    /* 取消配对完成回调（由 bridge_request_unpair() 触发）
-     * 配对信息清除成功后，主动断开连接，断开后会自动重新广播
-     */
-    case ESP_GAP_BLE_REMOVE_BOND_DEV_COMPLETE_EVT:
-        if (param->remove_bond_dev_cmpl.status == ESP_BT_STATUS_SUCCESS) {
-            ESP_LOGI(TAG, "Bond removed, disconnecting device");
-            esp_ble_gap_disconnect(param->remove_bond_dev_cmpl.bd_addr);
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
+                           &adv_params, nimble_gap_event, NULL);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "adv start failed: %d", rc);
+        return;
+    }
+    ESP_LOGI(TAG, "Advertising started");
+}
+
+/*--------------------------------------------------------------------*/
+/*  GAP 事件回调（NimBLE 协议栈）——连接、配对、加密变更等核心事件              */
+/*  注意：PASSKEY_ACTION / REPEAT_PAIRING 只走此回调，不走 event_listener  */
+/*--------------------------------------------------------------------*/
+
+static int nimble_gap_event(struct ble_gap_event *event, void *arg)
+{
+    switch (event->type) {
+    /* 连接建立：保存对端地址和句柄，通知桥接层 */
+    case BLE_GAP_EVENT_CONNECT:
+        if (event->connect.status == 0) {
+            struct ble_gap_conn_desc desc;
+            int rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
+            if (rc == 0) {
+                s_peer_addr_type = desc.peer_id_addr.type;
+                memcpy(s_remote_bda, desc.peer_id_addr.val, 6);
+            }
+            s_sec_conn = true;
+            s_conn_handle = event->connect.conn_handle;
+            update_led_status();
+            bridge_on_ble_connected();
+            ESP_LOGI(TAG, "BLE connected, conn_handle=%d", s_conn_handle);
         } else {
-            ESP_LOGE(TAG, "Failed to remove bond: 0x%x", param->remove_bond_dev_cmpl.status);
+            start_advertising();
         }
-        break;
+        return 0;
+
+    /* 连接断开：清除配对状态，恢复广播 */
+    case BLE_GAP_EVENT_DISCONNECT:
+        if (s_pairing_active) {
+            s_pairing_active = false;
+            bridge_on_pairing_done(false);
+        }
+        s_sec_conn = false;
+        s_conn_handle = 0;
+        memset(s_remote_bda, 0, 6);
+        update_led_status();
+        bridge_on_ble_disconnected();
+        ESP_LOGI(TAG, "BLE disconnected, reason=%d", event->disconnect.reason);
+        start_advertising();
+        return 0;
+
+    /* 连接参数更新（忽略） */
+    case BLE_GAP_EVENT_CONN_UPDATE:
+        ESP_LOGD(TAG, "Connection parameters updated");
+        return 0;
+
+    /* 配对密令（Passkey）动作请求：
+     *   BLE_SM_IOACT_INPUT  -> 主机显示配对码，等待键盘输入
+     *   BLE_SM_IOACT_NUMCMP -> 数字比对（自动接受）
+     *   BLE_SM_IOACT_DISP   -> 本应本地显示（Keyboard-Only 不适用） */
+    case BLE_GAP_EVENT_PASSKEY_ACTION: {
+        uint8_t action = event->passkey.params.action;
+        ESP_LOGI(TAG, "Passkey action: %d", action);
+
+        if (action == BLE_SM_IOACT_INPUT) {
+            s_pairing_active = true;
+            bridge_on_pairing_start();
+        } else if (action == BLE_SM_IOACT_NUMCMP) {
+            struct ble_sm_io io = {0};
+            io.action = BLE_SM_IOACT_NUMCMP;
+            io.numcmp_accept = 1;
+            ble_sm_inject_io(event->passkey.conn_handle, &io);
+        } else if (action == BLE_SM_IOACT_DISP) {
+            ESP_LOGI(TAG, "Display passkey (not applicable for keyboard-only)");
+        }
+        return 0;
+    }
+
+    /* 加密状态变更：status==0 表示配对成功 */
+    case BLE_GAP_EVENT_ENC_CHANGE: {
+        int enc_status = event->enc_change.status;
+        ESP_LOGI(TAG, "Encryption changed, status=%d", enc_status);
+        if (s_pairing_active) {
+            s_pairing_active = false;
+            bridge_on_pairing_done(enc_status == 0);
+        }
+        return 0;
+    }
+
+    /* 重复配对：总是接受（删除旧绑定后重新配对） */
+    case BLE_GAP_EVENT_REPEAT_PAIRING:
+        ESP_LOGI(TAG, "Repeat pairing - accept");
+        return 0;
 
     default:
-        break;
+        return 0;
     }
 }
+
+/*--------------------------------------------------------------------*/
+/*  HID 事件回调（收发报告、连接/断开通知）                                    */
+/*--------------------------------------------------------------------*/
 
 static void hidd_event_callback(void *handler_args, esp_event_base_t base,
                                 int32_t id, void *event_data)
@@ -261,29 +332,29 @@ static void hidd_event_callback(void *handler_args, esp_event_base_t base,
     (void)base;
 
     switch (event) {
-
-    case ESP_HIDD_START_EVENT:
+    case ESP_HIDD_START_EVENT: {
         ESP_LOGI(TAG, "HIDD START");
-        esp_ble_gap_set_device_name(s_device_name);
-        esp_ble_gap_config_adv_data(&hidd_adv_data);
+
+        ble_hid_config.device_name = s_device_name_buf;
+        ble_svc_gap_device_name_set(s_device_name_buf);
+
+        int rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
+        if (rc != 0) {
+            ESP_LOGE(TAG, "infer addr type failed: %d", rc);
+        }
+
+        start_advertising();
         break;
+    }
 
     case ESP_HIDD_CONNECT_EVENT:
         ESP_LOGI(TAG, "HIDD CONNECT");
-        bridge_on_ble_connected();
         break;
 
     case ESP_HIDD_DISCONNECT_EVENT:
-        s_sec_conn = false;
-        memset(s_remote_bda, 0, sizeof(esp_bd_addr_t));
-        ESP_LOGI(TAG, "HIDD DISCONNECT");
-        bridge_on_ble_disconnected();
-        esp_ble_gap_start_advertising(&hidd_adv_params);
+        ESP_LOGI(TAG, "HIDD DISCONNECT (reason=%d)", param->disconnect.reason);
         break;
 
-    /* BLE 主机写入 LED Output Report（CapsLock/NumLock/ScrollLock 状态）
-     * 转发到 USB 键盘，实现主机端 LED 状态同步
-     */
     case ESP_HIDD_OUTPUT_EVENT:
         ESP_LOGD(TAG, "HIDD OUTPUT[%u] ID: %u, Len: %d",
                  param->output.map_index, param->output.report_id, param->output.length);
@@ -293,7 +364,6 @@ static void hidd_event_callback(void *handler_args, esp_event_base_t base,
         }
         break;
 
-    /* 主机切换协议模式（BOOT/REPORT），当前仅记录日志 */
     case ESP_HIDD_PROTOCOL_MODE_EVENT:
         ESP_LOGD(TAG, "HIDD PROTOCOL MODE[%u]: %s",
                  param->protocol_mode.map_index,
@@ -305,65 +375,44 @@ static void hidd_event_callback(void *handler_args, esp_event_base_t base,
     }
 }
 
+/*--------------------------------------------------------------------*/
+/*  HOST TASK                                                         */
+/*--------------------------------------------------------------------*/
+
+static void ble_host_task(void *param)
+{
+    nimble_port_run();
+    nimble_port_freertos_deinit();
+}
+
+/*--------------------------------------------------------------------*/
+/*  PUBLIC API                                                        */
+/*--------------------------------------------------------------------*/
+
+/* 初始化 BLE HID + 安全配置（Keyboard-Only + MITM + 安全连接） */
 esp_err_t ble_hid_manager_init(void)
 {
-    esp_err_t ret;
+    ESP_LOGI(TAG, "BLE HID Manager init (NimBLE)");
 
-    ret = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
-    if (ret) {
-        ESP_LOGE(TAG, "release classic BT memory failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    nimble_port_init();
 
-    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    ret = esp_bt_controller_init(&bt_cfg);
-    if (ret) {
-        ESP_LOGE(TAG, "initialize controller failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    /* 安全配置：Keyboard-Only I/O 能力，MITM 保护，SC 安全连接，支持绑定 */
+    ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_KEYBOARD_ONLY;
+    ble_hs_cfg.sm_bonding = 1;
+    ble_hs_cfg.sm_mitm = 1;
+    ble_hs_cfg.sm_sc = 1;
+    ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
-    ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
-    if (ret) {
-        ESP_LOGE(TAG, "enable controller failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = esp_bluedroid_init();
-    if (ret) {
-        ESP_LOGE(TAG, "init bluedroid failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = esp_bluedroid_enable();
-    if (ret) {
-        ESP_LOGE(TAG, "enable bluedroid failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    /* 注册 GATT 事件回调（esp_hidd 内部管理 HID GATT 服务创建与属性表） */
-    esp_ble_gatts_register_callback(esp_hidd_gatts_event_handler);
-    esp_ble_gap_register_callback(gap_event_handler);
-
-    /* 将设备名同步到配置后，初始化 esp_hid BLE HID 设备 */
-    ble_hid_config.device_name = s_device_name;
-    ret = esp_hidd_dev_init(&ble_hid_config, ESP_HID_TRANSPORT_BLE,
-                            hidd_event_callback, &s_hid_dev);
+    ESP_LOGI(TAG, "Initializing HID Device (esp_hidd)");
+    esp_err_t ret = esp_hidd_dev_init(&ble_hid_config, ESP_HID_TRANSPORT_BLE,
+                                      hidd_event_callback, &s_hid_dev);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "init hidd device failed: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    esp_ble_auth_req_t auth_req = ESP_LE_AUTH_BOND;
-    esp_ble_io_cap_t iocap = ESP_IO_CAP_NONE;
-    uint8_t key_size = 16;
-    uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-    uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-
-    esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t));
-    esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(uint8_t));
-    esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(uint8_t));
-    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t));
-    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t));
+    nimble_port_freertos_init(ble_host_task);
 
     return ESP_OK;
 }
@@ -374,10 +423,8 @@ esp_err_t ble_hid_manager_deinit(void)
         esp_hidd_dev_deinit(s_hid_dev);
         s_hid_dev = NULL;
     }
-    esp_bluedroid_disable();
-    esp_bluedroid_deinit();
-    esp_bt_controller_disable();
-    esp_bt_controller_deinit();
+    s_sec_conn = false;
+    memset(s_remote_bda, 0, 6);
     return ESP_OK;
 }
 
@@ -389,12 +436,11 @@ bool ble_hid_is_connected(void)
     return false;
 }
 
-const esp_bd_addr_t *ble_hid_get_remote_addr(void)
+void ble_hid_get_remote_addr(uint8_t addr[6])
 {
-    return &s_remote_bda;
+    memcpy(addr, s_remote_bda, 6);
 }
 
-/* 返回 esp_hid 设备句柄，供 ble_hid_report 发送输入报告 */
 esp_hidd_dev_t *ble_hid_get_hid_dev(void)
 {
     return s_hid_dev;
@@ -403,6 +449,94 @@ esp_hidd_dev_t *ble_hid_get_hid_dev(void)
 void ble_hid_set_device_name(const char *name)
 {
     snprintf(s_device_name_buf, sizeof(s_device_name_buf), "%s", name);
-    s_device_name = s_device_name_buf;
-    esp_ble_gap_set_device_name(s_device_name);
+}
+
+/* 主动断开当前 BLE 连接 */
+esp_err_t ble_hid_disconnect(void)
+{
+    if (!s_sec_conn || s_conn_handle == 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    int rc = ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "disconnect failed: %d", rc);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+/* 删除对端绑定信息（断开连接 + 清除存储的密钥） */
+esp_err_t ble_hid_remove_bond(void)
+{
+    if (s_sec_conn && s_conn_handle != 0) {
+        ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+    }
+
+    ble_addr_t peer;
+    memcpy(peer.val, s_remote_bda, 6);
+    peer.type = s_peer_addr_type;
+
+    if (memcmp(s_remote_bda, "\x00\x00\x00\x00\x00\x00", 6) == 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    int rc = ble_store_util_delete_peer(&peer);
+    if (rc != 0 && rc != BLE_HS_ENOTCONN) {
+        ESP_LOGD(TAG, "remove bond returned: %d", rc);
+    }
+
+    memset(s_remote_bda, 0, 6);
+    s_peer_addr_type = 0;
+    return ESP_OK;
+}
+
+/* 查询是否正在等待用户输入配对码 */
+bool ble_hid_is_pairing(void)
+{
+    return s_pairing_active;
+}
+
+/* 向 NimBLE 协议栈注入用户通过键盘输入的 6 位配对码 */
+void ble_hid_inject_passkey(uint32_t passkey)
+{
+    if (!s_pairing_active) {
+        return;
+    }
+
+    if (s_conn_handle == 0) {
+        s_pairing_active = false;
+        bridge_on_pairing_done(false);
+        return;
+    }
+
+    struct ble_sm_io io = {0};
+    io.action = BLE_SM_IOACT_INPUT;
+    io.passkey = passkey;
+
+    int rc = ble_sm_inject_io(s_conn_handle, &io);
+    if (rc == 0) {
+        ESP_LOGI(TAG, "Passkey %06lu injected", (unsigned long)passkey);
+    } else {
+        ESP_LOGE(TAG, "Inject passkey failed: %d", rc);
+        s_pairing_active = false;
+        bridge_on_pairing_done(false);
+    }
+}
+
+/* 取消配对：注入无效密令 0xFFFFFF 以终止配对流程 */
+void ble_hid_cancel_pairing(void)
+{
+    if (!s_pairing_active) {
+        return;
+    }
+
+    if (s_conn_handle != 0) {
+        struct ble_sm_io io = {0};
+        io.action = BLE_SM_IOACT_INPUT;
+        io.passkey = 0xFFFFFF;
+        ble_sm_inject_io(s_conn_handle, &io);
+    }
+
+    s_pairing_active = false;
+    bridge_on_pairing_done(false);
 }

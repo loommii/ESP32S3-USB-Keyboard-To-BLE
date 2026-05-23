@@ -17,6 +17,9 @@
 #define BLE_PRODUCT_ID            0x05DF
 #define BLE_VERSION               0x0100
 
+/* BLE 外观值 (蓝牙 SIG 规范: HID Keyboard = 0x00C1) */
+#define BLE_APPEARANCE_HID_KEYBOARD  0x00C1
+
 /* 设备序列号 */
 #define DEVICE_SERIAL_NUMBER      "1234567890"
 

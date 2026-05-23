@@ -1,3 +1,4 @@
+#include <string.h>
 #include "bridge.h"
 #include "ble_hid_manager.h"
 #include "ble_hid_report.h"
@@ -8,15 +9,9 @@
 #include "led_status.h"
 #include "app_main.h"
 #include "esp_log.h"
-#include "esp_bt.h"
-#include "esp_bt_defs.h"
-#include "esp_bt_main.h"
-#include "esp_gap_ble_api.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-
-void update_led_status(void);
 
 static const char *TAG = "BRIDGE";
 
@@ -38,7 +33,13 @@ static bool s_switch_combo_active = false;
 
 /* 取消配对状态 */
 static bool s_unpair_pending = false;
-static esp_bd_addr_t s_unpair_addr = {0};
+
+/* 配对模式: 通过 USB 键盘输入 BLE 配对码 */
+static bool s_pairing_mode = false;          /* 是否处于配对输入模式 */
+static uint8_t s_pairing_fifo[6] = {0};      /* 6 位配码 FIFO 滑动窗口 */
+static int s_pairing_fifo_count = 0;         /* FIFO 中有效位数 */
+/* 上一帧按键状态，用于去抖检测（防止同一按键重复录入） */
+static uint8_t s_prev_pairing_keys[6] = {0};
 
 /**
  * @brief 切换设备槽位
@@ -63,9 +64,7 @@ static void switch_device_slot(uint8_t new_slot)
     nvs_storage_set_slot(new_slot);
 
     if (ble_hid_is_connected()) {
-        esp_bd_addr_t remote_addr;
-        memcpy(remote_addr, *ble_hid_get_remote_addr(), sizeof(esp_bd_addr_t));
-        esp_ble_gap_disconnect(remote_addr);
+        ble_hid_disconnect();
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 
@@ -77,10 +76,7 @@ static void switch_device_slot(uint8_t new_slot)
 /**
  * @brief 请求清除当前连接设备的配对信息并断开连接
  *
- * 流程：调用 esp_ble_remove_bond_device() → 等待 GAP 回调
- *       → 回调中调用 esp_ble_gap_disconnect() → 自动重新广播
- *
- * 符合官方最佳实践：等待 ESP_GAP_BLE_REMOVE_BOND_DEV_COMPLETE_EVT 后再断开连接
+ * 调用 ble_hid_remove_bond() 断开连接并删除绑定信息
  */
 void bridge_request_unpair(void)
 {
@@ -90,13 +86,10 @@ void bridge_request_unpair(void)
     }
 
     s_unpair_pending = true;
-    memcpy(s_unpair_addr, *ble_hid_get_remote_addr(), sizeof(esp_bd_addr_t));
 
-    ESP_LOGI(TAG, "Unpair requested for %02x:%02x:%02x:%02x:%02x:%02x",
-             s_unpair_addr[0], s_unpair_addr[1], s_unpair_addr[2],
-             s_unpair_addr[3], s_unpair_addr[4], s_unpair_addr[5]);
+    ESP_LOGI(TAG, "Unpair requested");
 
-    esp_ble_remove_bond_device(s_unpair_addr);
+    ble_hid_remove_bond();
 }
 
 static void check_unpair_combo(const key_report_t *report)
@@ -152,19 +145,126 @@ static void check_device_switch_combo(const key_report_t *report)
     }
 }
 
+/* 检查按键是否已在上一帧中出现（用于去抖） */
+static bool is_key_in_set(uint8_t key, const uint8_t *set, int count)
+{
+    for (int i = 0; i < count; i++) {
+        if (set[i] == key) return true;
+    }
+    return false;
+}
+
+/* 配对模式按键处理：FIFO 滑动窗口收集数字，Enter 提交，Esc 取消 */
+static void handle_pairing_key(const key_report_t *report)
+{
+    for (int i = 0; i < 6; i++) {
+        uint8_t key = report->keys[i];
+        if (key == 0) continue;  /* 空键忽略 */
+
+        /* 去抖：按键已在上一帧中，跳过避免重复 */
+        if (is_key_in_set(key, s_prev_pairing_keys, 6)) {
+            continue;
+        }
+
+        /* 数字键 1~9：HID_KEY_1(0x1E) ~ HID_KEY_9(0x26) 映射为 1~9 */
+        if (key >= HID_KEY_1 && key <= HID_KEY_9) {
+            int digit = key - HID_KEY_1 + 1;
+            if (s_pairing_fifo_count >= 6) {
+                memmove(s_pairing_fifo, s_pairing_fifo + 1, 5);
+                s_pairing_fifo[5] = digit;
+            } else {
+                s_pairing_fifo[s_pairing_fifo_count] = digit;
+                s_pairing_fifo_count++;
+            }
+            ESP_LOGI(TAG, "Pairing digit: %d (FIFO: %d/%d)",
+                     digit, s_pairing_fifo_count, 6);
+        } else if (key == HID_KEY_0) {  /* 数字键 0：单独处理，因为 HID_KEY_0(0x27) 不在 1~9 范围内 */
+            int digit = 0;
+            if (s_pairing_fifo_count >= 6) {
+                memmove(s_pairing_fifo, s_pairing_fifo + 1, 5);
+                s_pairing_fifo[5] = digit;
+            } else {
+                s_pairing_fifo[s_pairing_fifo_count] = digit;
+                s_pairing_fifo_count++;
+            }
+            ESP_LOGI(TAG, "Pairing digit: %d (FIFO: %d/%d)",
+                     digit, s_pairing_fifo_count, 6);
+        } else if (key == HID_KEY_ENTER || key == HID_KEY_KEYPAD_ENTER) {
+            /* Enter：提交 6 位配对码 */
+            if (s_pairing_fifo_count == 6) {
+                uint32_t passkey = 0;
+                for (int j = 0; j < 6; j++) {
+                    passkey = passkey * 10 + s_pairing_fifo[j];
+                }
+                ESP_LOGI(TAG, "Passkey %06lu submitted", (unsigned long)passkey);
+                ble_hid_inject_passkey(passkey);
+            } else {
+                ESP_LOGW(TAG, "Enter pressed with only %d/6 digits", s_pairing_fifo_count);
+            }
+        } else if (key == HID_KEY_ESC) {
+            /* Esc：取消配对 */
+            ESP_LOGI(TAG, "Pairing cancelled by user");
+            ble_hid_cancel_pairing();
+        }
+    }
+
+    /* 保存当前帧按键供下一帧去抖使用 */
+    memcpy(s_prev_pairing_keys, report->keys, 6);
+}
+
+/* BLE 被动发起配对请求：初始化 FIFO，LED 变为紫色常亮，等待键盘输入 */
+void bridge_on_pairing_start(void)
+{
+    s_pairing_mode = true;
+    s_pairing_fifo_count = 0;
+    memset(s_pairing_fifo, 0, sizeof(s_pairing_fifo));
+    memset(s_prev_pairing_keys, 0, sizeof(s_prev_pairing_keys));
+    led_status_set(LED_STATE_PAIRING);
+    ESP_LOGI(TAG, "PAIRING: type the 6-digit passkey from your screen, then press Enter");
+}
+
+/* 配对完成（无论成功或失败）：清除配对状态，更新 LED */
+void bridge_on_pairing_done(bool success)
+{
+    s_pairing_mode = false;
+    s_pairing_fifo_count = 0;
+    memset(s_pairing_fifo, 0, sizeof(s_pairing_fifo));
+    memset(s_prev_pairing_keys, 0, sizeof(s_prev_pairing_keys));
+
+    if (success) {
+        ESP_LOGI(TAG, "Pairing succeeded");
+        update_led_status();
+    } else {
+        ESP_LOGI(TAG, "Pairing failed");
+        led_status_set(LED_STATE_USB_CONNECTED_BLE_DISCONNECTED);
+    }
+}
+
+/* 桥接任务：从队列接收 USB 键盘报告，优先处理配对/切槽/解绑等特殊模式 */
 static void bridge_task(void *arg)
 {
     key_report_t report;
 
     while (1) {
         if (xQueueReceive(s_key_queue, &report, portMAX_DELAY)) {
+            /* 优先检查设备切换组合键（ScrollLock+数字） */
             check_device_switch_combo(&report);
+
+            /* 配对模式下拦截所有按键，不转发到 BLE */
+            if (s_pairing_mode) {
+                handle_pairing_key(&report);
+                continue;
+            }
+
+            /* 检查解绑组合键（ScrollLock+Esc） */
             check_unpair_combo(&report);
 
+            /* 未连接时不发 BLE */
             if (!ble_hid_is_connected()) {
                 continue;
             }
 
+            /* 通过 BLE HID 转发按键报告（带重试） */
             bool send_ok = false;
 
             for (int retry = 0; retry < BRIDGE_SEND_RETRY_COUNT; retry++) {
@@ -219,6 +319,7 @@ esp_err_t bridge_init(void)
     return ESP_OK;
 }
 
+/* USB HOST 回调：将原始键盘报告送入桥接队列 */
 void bridge_handle_keyboard_report(const uint8_t *data, size_t length)
 {
     if (length < sizeof(hid_keyboard_input_report_boot_t)) {
@@ -278,13 +379,14 @@ uint8_t bridge_get_current_slot(void)
     return s_current_slot;
 }
 
+/* BLE 连接建立回调：重置解绑标志，更新 LED 状态 */
 void bridge_on_ble_connected(void)
 {
-    /* 重连后重置解绑标志，允许再次使用 ScrollLock+Esc 组合键 */
     s_unpair_pending = false;
     update_led_status();
 }
 
+/* BLE 断开回调：更新 LED 状态 */
 void bridge_on_ble_disconnected(void)
 {
     update_led_status();

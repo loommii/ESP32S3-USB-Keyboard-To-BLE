@@ -12,4 +12,9 @@
  */
 hid_host_device_handle_t app_get_keyboard_handle(void);
 
+/**
+ * @brief 根据 USB / BLE 连接状态更新 LED 指示灯
+ */
+void update_led_status(void);
+
 #endif

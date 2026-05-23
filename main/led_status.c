@@ -2,12 +2,34 @@
 #include "config.h"
 #include "led_strip.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/timers.h"
 
 static const char *TAG = "LED";
 
 #define WS2812_GPIO 48
+#define BLINK_INTERVAL_MS 500
 
 static led_strip_handle_t s_strip = NULL;
+static TimerHandle_t s_blink_timer = NULL;
+
+static uint8_t s_current_r = 0;
+static uint8_t s_current_g = 0;
+static uint8_t s_current_b = 0;
+static bool s_blink_on = true;
+
+/* 闪烁定时器回调：交替亮/灭 LED */
+static void blink_timer_cb(TimerHandle_t xTimer)
+{
+    (void)xTimer;
+    s_blink_on = !s_blink_on;
+    if (s_blink_on) {
+        led_strip_set_pixel(s_strip, 0, s_current_r, s_current_g, s_current_b);
+    } else {
+        led_strip_clear(s_strip);
+    }
+    led_strip_refresh(s_strip);
+}
 
 esp_err_t led_status_init(void)
 {
@@ -22,37 +44,87 @@ esp_err_t led_status_init(void)
     };
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &s_strip));
     led_strip_clear(s_strip);
+
+    /* 创建 500ms 周期性闪烁定时器 */
+    s_blink_timer = xTimerCreate("led_blink", pdMS_TO_TICKS(BLINK_INTERVAL_MS),
+                                 pdTRUE, NULL, blink_timer_cb);
+
     ESP_LOGI(TAG, "LED initialized on GPIO%d", WS2812_GPIO);
     return ESP_OK;
 }
 
+/* 停止闪烁，恢复常亮 */
+static void stop_blink(void)
+{
+    if (s_blink_timer && xTimerIsTimerActive(s_blink_timer)) {
+        xTimerStop(s_blink_timer, 0);
+    }
+    s_blink_on = true;
+}
+
+/* 启动闪烁定时器 */
+static void start_blink(void)
+{
+    s_blink_on = true;
+    if (s_blink_timer) {
+        xTimerStart(s_blink_timer, 0);
+    }
+}
+
 esp_err_t led_status_set(led_state_t state)
 {
+    uint8_t r = 0, g = 0, b = 0;
+    bool blink = false;
+
     switch (state) {
     case LED_STATE_USB_DISCONNECTD:
-        /* 红色: USB未连接 */
-        led_strip_set_pixel(s_strip, 0, LED_BRIGHTNESS, 0, 0);
+        /* USB 未连接：红色常亮 */
+        r = LED_BRIGHTNESS;
         break;
     case LED_STATE_USB_CONNECTED_BLE_DISCONNECTED:
-        /* 紫色: USB已连接，BLE未连接 */
-        led_strip_set_pixel(s_strip, 0, LED_BRIGHTNESS, 0, LED_BRIGHTNESS);
+        /* USB 已连、BLE 未连：紫色闪烁 */
+        r = LED_BRIGHTNESS;
+        b = LED_BRIGHTNESS;
+        blink = true;
+        break;
+    case LED_STATE_PAIRING:
+        /* 配对中：紫色常亮 */
+        r = LED_BRIGHTNESS;
+        b = LED_BRIGHTNESS;
+        blink = false;
         break;
     case LED_STATE_ALL_CONNECTED:
-        /* 绿色: USB和BLE均已连接 */
-        led_strip_set_pixel(s_strip, 0, 0, LED_BRIGHTNESS, 0);
+        /* USB + BLE 全连接：绿色常亮 */
+        g = LED_BRIGHTNESS;
         break;
     case LED_STATE_SWITCHING:
-        /* 橙色: 正在切换设备槽位 */
-        led_strip_set_pixel(s_strip, 0, LED_BRIGHTNESS, LED_BRIGHTNESS / 2, 0);
+        /* 设备切换中：黄色 */
+        r = LED_BRIGHTNESS;
+        g = LED_BRIGHTNESS / 2;
         break;
     case LED_STATE_ERROR:
-        /* 红色: 错误状态 */
-        led_strip_set_pixel(s_strip, 0, LED_BRIGHTNESS, 0, 0);
+        /* 错误状态：红色 */
+        r = LED_BRIGHTNESS;
         break;
     default:
+        stop_blink();
         led_strip_clear(s_strip);
+        led_strip_refresh(s_strip);
         return ESP_OK;
     }
+
+    s_current_r = r;
+    s_current_g = g;
+    s_current_b = b;
+
+    if (blink) {
+        start_blink();
+        s_blink_on = true;
+    } else {
+        stop_blink();
+    }
+
+    led_strip_set_pixel(s_strip, 0, r, g, b);
     led_strip_refresh(s_strip);
     return ESP_OK;
 }
