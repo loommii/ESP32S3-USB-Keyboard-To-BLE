@@ -211,14 +211,30 @@ static void start_advertising(void)
     fields.name_is_complete = 1;
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-    fields.appearance = 0x03C1;
+    fields.appearance = BLE_APPEARANCE_HID_KEYBOARD;
     fields.appearance_is_present = 1;
-    fields.flags = BLE_HS_ADV_F_DISC_GEN;
+    fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+
+    ble_uuid16_t uuid16 = BLE_UUID16_INIT(0x1812);
+    fields.uuids16 = &uuid16;
+    fields.num_uuids16 = 1;
+    fields.uuids16_is_complete = 1;
 
     int rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "adv set fields failed: %d", rc);
         return;
+    }
+
+    /* Scan Response */
+    struct ble_hs_adv_fields scan_rsp;
+    memset(&scan_rsp, 0, sizeof(scan_rsp));
+    scan_rsp.name = (uint8_t *)s_device_name_buf;
+    scan_rsp.name_len = strlen(s_device_name_buf);
+    scan_rsp.name_is_complete = 1;
+    rc = ble_gap_adv_rsp_set_fields(&scan_rsp);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "adv rsp set fields failed: %d", rc);
     }
 
     rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
@@ -310,10 +326,16 @@ static int nimble_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
     }
 
-    /* 重复配对：总是接受（删除旧绑定后重新配对） */
-    case BLE_GAP_EVENT_REPEAT_PAIRING:
-        ESP_LOGI(TAG, "Repeat pairing - accept");
-        return 0;
+    /* 重复配对：对端已有旧绑定，删除后重新配对 */
+    case BLE_GAP_EVENT_REPEAT_PAIRING: {
+        struct ble_gap_conn_desc desc;
+        int rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
+        if (rc == 0) {
+            ble_store_util_delete_peer(&desc.peer_id_addr);
+        }
+        ESP_LOGI(TAG, "Repeat pairing - deleting old bond, retrying");
+        return BLE_GAP_REPEAT_PAIRING_RETRY;
+    }
 
     default:
         return 0;

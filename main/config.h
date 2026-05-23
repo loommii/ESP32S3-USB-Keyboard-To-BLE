@@ -17,8 +17,8 @@
 #define BLE_PRODUCT_ID            0x05DF
 #define BLE_VERSION               0x0100
 
-/* BLE 外观值 (蓝牙 SIG 规范: HID Keyboard = 0x00C1) */
-#define BLE_APPEARANCE_HID_KEYBOARD  0x00C1
+/* BLE 外观值 (蓝牙 SIG 规范: HID Keyboard = 0x03C1) */
+#define BLE_APPEARANCE_HID_KEYBOARD  0x03C1
 
 /* 设备序列号 */
 #define DEVICE_SERIAL_NUMBER      "1234567890"
@@ -26,7 +26,7 @@
 /* 固件版本号（公开） */
 #define PROJECT_VERSION           "V1.1.0"
 /* 内部构建标记 — 不兼容改动时递增（如 "2"），设为 "auto" 每次启动强制清 NVS */
-#define PROJECT_BUILD             "1"
+#define PROJECT_BUILD             "2"
 
 /* 电池电量百分比 */
 #define BATTERY_LEVEL             100
