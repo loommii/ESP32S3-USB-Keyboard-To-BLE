@@ -4,7 +4,7 @@
 
 # USB Keyboard → BLE Bridge
 
-**Version: V1.0.1**
+**Version: V1.1.0**
 
 <p align="center"><img src="logo.png" width="260" alt="logo"></p>
 

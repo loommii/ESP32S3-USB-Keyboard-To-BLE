@@ -1,7 +1,9 @@
+#include <string.h>
 #include "nvs_storage.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "config.h"
 
 static const char *TAG = "NVS";
 
@@ -26,7 +28,28 @@ esp_err_t nvs_storage_init(void)
         return ret;
     }
 
-    ESP_LOGI(TAG, "NVS storage initialized");
+    /* 检查构建版本——不匹配或为 "auto" 时擦除整个 NVS */
+    char stored_build[32] = {0};
+    size_t len = sizeof(stored_build);
+    esp_err_t err = nvs_get_str(s_nvs_handle, "build", stored_build, &len);
+
+    bool need_erase = (err != ESP_OK)
+                      || (strcmp(stored_build, PROJECT_BUILD) != 0)
+                      || (strcmp(PROJECT_BUILD, "auto") == 0);
+
+    if (need_erase) {
+        ESP_LOGW(TAG, "Build mismatch or forced: [%s] → [%s], erasing NVS...",
+                 (err == ESP_OK) ? stored_build : "(none)", PROJECT_BUILD);
+        nvs_close(s_nvs_handle);
+        nvs_flash_erase();
+        nvs_flash_init();
+        nvs_open(NVS_NAMESPACE, NVS_READWRITE, &s_nvs_handle);
+    }
+
+    nvs_set_str(s_nvs_handle, "build", PROJECT_BUILD);
+    nvs_commit(s_nvs_handle);
+
+    ESP_LOGI(TAG, "NVS storage initialized (build %s)", PROJECT_BUILD);
     return ESP_OK;
 }
 

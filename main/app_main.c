@@ -184,7 +184,8 @@ static void hid_host_device_callback(hid_host_device_handle_t hid_device_handle,
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "USB-BLE-KB: Hello");
+    ESP_LOGI(TAG, "USB-BLE-KB: Hello (version %s, build %s)",
+             PROJECT_VERSION, PROJECT_BUILD);
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
