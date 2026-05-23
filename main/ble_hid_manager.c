@@ -8,6 +8,7 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "services/gap/ble_svc_gap.h"
+#include "services/bas/ble_svc_bas.h"
 #include "ble_hid_manager.h"
 #include "bridge.h"
 #include "led_status.h"
@@ -411,6 +412,9 @@ esp_err_t ble_hid_manager_init(void)
         ESP_LOGE(TAG, "init hidd device failed: %s", esp_err_to_name(ret));
         return ret;
     }
+
+    /* 电池服务由 nimble_hidd.c 内部初始化，此处仅设值为 100%（外部供电） */
+    ble_svc_bas_battery_level_set(BATTERY_LEVEL);
 
     nimble_port_freertos_init(ble_host_task);
 
