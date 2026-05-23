@@ -26,6 +26,7 @@ static bool s_sec_conn = false;             /* 是否已建立 BLE 连接 */
 static uint8_t s_remote_bda[6] = {0};       /* 对端设备蓝牙地址 */
 static uint8_t s_peer_addr_type = 0;        /* 对端地址类型（公共/随机） */
 static uint16_t s_conn_handle = 0;          /* 当前连接句柄 */
+static uint16_t s_pairing_conn_handle = 0;  /* 配对流程的连接句柄（独立于 s_conn_handle） */
 static esp_hidd_dev_t *s_hid_dev = NULL;    /* esp_hid 组件设备句柄 */
 static char s_device_name_buf[32] = DEVICE_NAME_1;  /* 当前广播设备名 */
 static uint8_t s_own_addr_type = 0;         /* 本地地址类型 */
@@ -281,6 +282,7 @@ static int nimble_gap_event(struct ble_gap_event *event, void *arg)
         }
         s_sec_conn = false;
         s_conn_handle = 0;
+        s_pairing_conn_handle = 0;
         memset(s_remote_bda, 0, 6);
         update_led_status();
         bridge_on_ble_disconnected();
@@ -296,10 +298,14 @@ static int nimble_gap_event(struct ble_gap_event *event, void *arg)
     /* 配对密令（Passkey）动作请求：
      *   BLE_SM_IOACT_INPUT  -> 主机显示配对码，等待键盘输入
      *   BLE_SM_IOACT_NUMCMP -> 数字比对（自动接受）
-     *   BLE_SM_IOACT_DISP   -> 本应本地显示（Keyboard-Only 不适用） */
+     *   BLE_SM_IOACT_DISP   -> 本应本地显示（Keyboard-Only 不适用）
+     * 注意：用独立 s_pairing_conn_handle 而非 s_conn_handle，
+     *       防止 GAP 回调冲突导致 conn_handle 被误清 */
     case BLE_GAP_EVENT_PASSKEY_ACTION: {
         uint8_t action = event->passkey.params.action;
         ESP_LOGI(TAG, "Passkey action: %d", action);
+
+        s_pairing_conn_handle = event->passkey.conn_handle;
 
         if (action == BLE_SM_IOACT_INPUT) {
             s_pairing_active = true;
@@ -308,7 +314,7 @@ static int nimble_gap_event(struct ble_gap_event *event, void *arg)
             struct ble_sm_io io = {0};
             io.action = BLE_SM_IOACT_NUMCMP;
             io.numcmp_accept = 1;
-            ble_sm_inject_io(event->passkey.conn_handle, &io);
+            ble_sm_inject_io(s_pairing_conn_handle, &io);
         } else if (action == BLE_SM_IOACT_DISP) {
             ESP_LOGI(TAG, "Display passkey (not applicable for keyboard-only)");
         }
@@ -323,6 +329,7 @@ static int nimble_gap_event(struct ble_gap_event *event, void *arg)
             s_pairing_active = false;
             bridge_on_pairing_done(enc_status == 0);
         }
+        s_pairing_conn_handle = 0;
         return 0;
     }
 
@@ -529,7 +536,7 @@ void ble_hid_inject_passkey(uint32_t passkey)
         return;
     }
 
-    if (s_conn_handle == 0) {
+    if (s_pairing_conn_handle == 0) {
         s_pairing_active = false;
         bridge_on_pairing_done(false);
         return;
@@ -539,7 +546,7 @@ void ble_hid_inject_passkey(uint32_t passkey)
     io.action = BLE_SM_IOACT_INPUT;
     io.passkey = passkey;
 
-    int rc = ble_sm_inject_io(s_conn_handle, &io);
+    int rc = ble_sm_inject_io(s_pairing_conn_handle, &io);
     if (rc == 0) {
         ESP_LOGI(TAG, "Passkey %06lu injected", (unsigned long)passkey);
     } else {
@@ -556,11 +563,11 @@ void ble_hid_cancel_pairing(void)
         return;
     }
 
-    if (s_conn_handle != 0) {
+    if (s_pairing_conn_handle != 0) {
         struct ble_sm_io io = {0};
         io.action = BLE_SM_IOACT_INPUT;
         io.passkey = 0xFFFFFF;
-        ble_sm_inject_io(s_conn_handle, &io);
+        ble_sm_inject_io(s_pairing_conn_handle, &io);
     }
 
     s_pairing_active = false;

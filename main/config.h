@@ -26,7 +26,7 @@
 /* 固件版本号（公开） */
 #define PROJECT_VERSION           "V1.1.0"
 /* 内部构建标记 — 不兼容改动时递增（如 "2"），设为 "auto" 每次启动强制清 NVS */
-#define PROJECT_BUILD             "2"
+#define PROJECT_BUILD             "4"
 
 /* 电池电量百分比 */
 #define BATTERY_LEVEL             100
