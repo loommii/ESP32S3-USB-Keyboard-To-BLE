@@ -1,3 +1,22 @@
+/*
+ * SPDX-FileCopyrightText: 2026 loommii
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #ifndef CONFIG_H
 #define CONFIG_H
 
@@ -26,7 +45,7 @@
 /* 固件版本号（公开） */
 #define PROJECT_VERSION           "V1.1.0"
 /* 内部构建标记 — 不兼容改动时递增（如 "2"），设为 "auto" 每次启动强制清 NVS */
-#define PROJECT_BUILD             "4"
+#define PROJECT_BUILD             "10"
 
 /* 电池电量百分比 */
 #define BATTERY_LEVEL             100
