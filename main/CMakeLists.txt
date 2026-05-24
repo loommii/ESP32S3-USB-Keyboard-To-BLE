@@ -5,6 +5,7 @@ idf_component_register(
         "ble_hid_manager.c"
         "ble_hid_report.c"
         "bridge.c"
+        "led_poll.c"
         "led_status.c"
         "nvs_storage.c"
     INCLUDE_DIRS "."

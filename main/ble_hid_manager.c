@@ -33,6 +33,7 @@
 #include "led_status.h"
 #include "app_main.h"
 #include "config.h"
+#include "led_poll.h"
 
 static const char *TAG = "BLE_HID";
 
@@ -465,6 +466,8 @@ esp_err_t ble_hid_manager_init(void)
     ble_svc_bas_battery_level_set(BATTERY_LEVEL);
 
     nimble_port_freertos_init(ble_host_task);
+
+    led_poll_init();
 
     return ESP_OK;
 }
