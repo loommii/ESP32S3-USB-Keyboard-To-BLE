@@ -4,8 +4,10 @@
 
 # USB Keyboard → BLE Bridge
 
-**Version: V1.1.0**
+**Version: V1.1.1**
 
+> **V1.1.1** — Optimized BLE initialization stability — increased main task stack size for reliable startup.
+>
 > **V1.1.0** — BLE stack rebuilt (Bluedroid → NimBLE), security upgraded to Passkey Entry (6-digit verification code, MITM protection).
 > ⚠ If you encounter compatibility issues, please use V1.0.1 instead.
 >
