@@ -54,6 +54,7 @@ Turns a wired USB keyboard into a wireless Bluetooth (BLE) keyboard using an ESP
 2. Click "Connect and flash"
 3. Select the serial port → wait for completion → device reboots automatically
 
+
 ## Features
 
 - **Wired keyboard to BLE wireless** — plug-and-play USB keyboard, Bluetooth connectivity to PC/tablet/phone

@@ -71,12 +71,10 @@
   </div>
 
   <script>
-    const VERSION = "V1.1.0";
-
     const i18n = {
       zh: {
         title: "USB 键盘转 BLE 无线桥接器",
-        subtitle: "ESP32-S3 固件烧录工具 · by Loommii · " + VERSION,
+        subtitle: "ESP32-S3 固件烧录工具 · by Loommii",
         f1: "USB 键盘 → BLE 蓝牙桥接",
         f2: "三设备切换 (ScrLk + 1/2/3)",
         f3: "解绑配对 (ScrLk + Esc)",
@@ -87,7 +85,7 @@
       },
       en: {
         title: "USB Keyboard to BLE Bridge",
-        subtitle: "ESP32-S3 Firmware Flasher · by Loommii · " + VERSION,
+        subtitle: "ESP32-S3 Firmware Flasher · by Loommii",
         f1: "USB Keyboard → BLE Bridge",
         f2: "3-Device Switching (ScrLk + 1/2/3)",
         f3: "Unpair Device (ScrLk + Esc)",
@@ -98,10 +96,13 @@
       }
     };
 
+    let VERSION = "";
+
     function applyLang(lang) {
       const t = i18n[lang];
       document.getElementById("i18n-title").textContent = t.title;
-      document.getElementById("i18n-subtitle").textContent = t.subtitle;
+      const versionSuffix = VERSION ? " · " + VERSION : "";
+      document.getElementById("i18n-subtitle").textContent = t.subtitle + versionSuffix;
       document.getElementById("i18n-f1").textContent = t.f1;
       document.getElementById("i18n-f2").textContent = t.f2;
       document.getElementById("i18n-f3").textContent = t.f3;
@@ -119,7 +120,12 @@
       applyLang(next);
     }
 
-    (function initLang() {
+    (async function init() {
+      try {
+        const res = await fetch("manifest.json");
+        const manifest = await res.json();
+        VERSION = manifest.version || "";
+      } catch {}
       const saved = localStorage.getItem("lang");
       if (saved) { applyLang(saved); return; }
       const browser = navigator.language || navigator.userLanguage || "";

@@ -1,0 +1,29 @@
+name: Build and Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - '[vV]*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build firmware
+        run: |
+          . /opt/esp/idf/export.sh
+          idf.py set-target esp32s3
+          idf.py build
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/ESP32S3-USB-Keyboard-To-BLE.bin
+          generate_release_notes: true
